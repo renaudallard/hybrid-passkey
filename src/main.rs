@@ -8,9 +8,15 @@
 //! with {"qr": svg}, then {"status": ...} updates, and finally either
 //! {"credential": AuthenticationResponseJSON} or {"error": text}. Closing the
 //! port cancels the request.
+//!
+//! Thunderbird only starts native helpers named in a manifest that gives
+//! their absolute path. `towa-passkey --install` writes that manifest for
+//! the current user, pointing at wherever the helper is, and
+//! `towa-passkey --uninstall` removes it.
 
 use std::error::Error;
 use std::io::Write as _;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use libwebauthn::ops::webauthn::{
@@ -43,7 +49,66 @@ const MAX_REQUEST: usize = 64 * 1024;
 const MIN_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_TIMEOUT: Duration = Duration::from_secs(600);
 
+/// The native messaging host name Towa connects to, and the only add-on
+/// allowed to start the helper.
+const HOST_NAME: &str = "towa_passkey";
+const EXTENSION_ID: &str = "towa@arnor.org";
+
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
+
+/// Where Thunderbird looks for the manifests of the current user on Linux.
+fn manifest_path() -> Result<PathBuf> {
+    let home = std::env::var_os("HOME")
+        .filter(|home| !home.is_empty())
+        .ok_or("HOME is not set")?;
+    Ok(PathBuf::from(home)
+        .join(".mozilla/native-messaging-hosts")
+        .join(format!("{HOST_NAME}.json")))
+}
+
+fn install() -> Result<String> {
+    let helper = std::env::current_exe()?.canonicalize()?;
+    let helper = helper
+        .to_str()
+        .ok_or("the helper path is not valid UTF-8")?;
+    let path = manifest_path()?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let manifest = json!({
+        "name": HOST_NAME,
+        "description": "Passkey on a phone for Towa",
+        "path": helper,
+        "type": "stdio",
+        "allowed_extensions": [EXTENSION_ID],
+    });
+    std::fs::write(&path, serde_json::to_string_pretty(&manifest)? + "\n")?;
+    Ok(format!("Registered {helper} in {}", path.display()))
+}
+
+fn uninstall() -> Result<String> {
+    let path = manifest_path()?;
+    match std::fs::remove_file(&path) {
+        Ok(()) => Ok(format!("Removed {}", path.display())),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            Ok(format!("{} does not exist", path.display()))
+        }
+        Err(err) => Err(err.into()),
+    }
+}
+
+fn report(result: Result<String>) -> ! {
+    match result {
+        Ok(text) => {
+            println!("{text}");
+            std::process::exit(0);
+        }
+        Err(err) => {
+            eprintln!("towa-passkey: {err}");
+            std::process::exit(1);
+        }
+    }
+}
 
 /// Native messaging framing: a 32-bit length in native byte order, then the
 /// JSON text.
@@ -152,6 +217,16 @@ async fn sign(request: &GetAssertionRequest) -> Result<Value> {
 
 #[tokio::main]
 async fn main() {
+    // Thunderbird passes the manifest path and the add-on id, the options
+    // are for the user.
+    match std::env::args().nth(1).as_deref() {
+        Some("--install") => report(install()),
+        Some("--uninstall") => report(uninstall()),
+        Some(arg) if arg.starts_with("--") => {
+            report(Err("usage: towa-passkey [--install | --uninstall]".into()))
+        }
+        _ => {}
+    }
     let mut input = tokio::io::stdin();
     let result = match receive(&mut input).await {
         Ok(message) => match prepare(&message).await {
