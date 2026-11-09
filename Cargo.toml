@@ -1,7 +1,7 @@
 [package]
 name = "towa-passkey"
 version = "0.1.0"
-description = "Native messaging helper that lets Towa sign in with a passkey on a phone"
+description = "Native messaging helper that answers passkey requests with a passkey on a phone, for Towa and phonekey"
 edition = "2021"
 rust-version = "1.88"
 publish = false
