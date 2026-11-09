@@ -2,6 +2,7 @@
 name = "hybrid-passkey"
 version = "0.1.0"
 description = "Native messaging helper that answers passkey requests of Thunderbird and Firefox add-ons with a passkey on a phone"
+license = "LGPL-2.1-or-later"
 edition = "2021"
 rust-version = "1.88"
 publish = false

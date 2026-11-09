@@ -57,5 +57,9 @@ either `{"credential": AuthenticationResponseJSON}` or `{"error": text}`.
 Closing the port cancels the request. Only signing in is supported, related
 origin requests are not.
 
-The helper uses [libwebauthn](https://github.com/linux-credentials/libwebauthn)
-(LGPL-2.1-or-later).
+## License
+
+Copyright (c) 2026 Renaud Allard. Licensed under LGPL-2.1-or-later, see
+[LICENSE](LICENSE). The helper uses the same license as
+[libwebauthn](https://github.com/linux-credentials/libwebauthn), which it is
+built on.
