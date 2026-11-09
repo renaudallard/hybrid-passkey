@@ -1,4 +1,5 @@
-//! Native messaging helper for Towa and phonekey: answers the passkey
+//! hybrid-passkey: native messaging helper for Towa and phonekey that
+//! answers the passkey
 //! request of a web page with a passkey kept on a phone, over the FIDO
 //! hybrid transport (QR code, Bluetooth proximity check, then a tunnel
 //! through the phone vendor's relay server).
@@ -13,13 +14,13 @@
 //! port cancels the request.
 //!
 //! Thunderbird and Firefox only start native helpers named in a manifest
-//! that gives their absolute path. `towa-passkey --install` writes that
+//! that gives their absolute path. `hybrid-passkey --install` writes that
 //! manifest for the current user, pointing at wherever the helper is, and
-//! `towa-passkey --uninstall` removes it.
+//! `hybrid-passkey --uninstall` removes it.
 
 use std::error::Error;
 use std::io::Write as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use libwebauthn::ops::webauthn::{
@@ -50,20 +51,32 @@ const MAX_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// The native messaging host name the add-ons connect to, and the only
 /// add-ons allowed to start the helper.
-const HOST_NAME: &str = "towa_passkey";
+const HOST_NAME: &str = "hybrid_passkey";
+/// The host name of the helper when it was part of Towa. --install removes
+/// its manifest, which would otherwise point at an old helper.
+const OLD_HOST_NAME: &str = "towa_passkey";
 const EXTENSION_IDS: [&str; 2] = ["towa@arnor.org", "phonekey@arnor.org"];
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 /// Where Thunderbird and Firefox look for the manifests of the current user
 /// on Linux.
-fn manifest_path() -> Result<PathBuf> {
+fn manifest_path(name: &str) -> Result<PathBuf> {
     let home = std::env::var_os("HOME")
         .filter(|home| !home.is_empty())
         .ok_or("HOME is not set")?;
     Ok(PathBuf::from(home)
         .join(".mozilla/native-messaging-hosts")
-        .join(format!("{HOST_NAME}.json")))
+        .join(format!("{name}.json")))
+}
+
+/// Removes a manifest, true if there was one.
+fn remove_manifest(path: &Path) -> Result<bool> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(true),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(err) => Err(err.into()),
+    }
 }
 
 fn install() -> Result<String> {
@@ -71,7 +84,7 @@ fn install() -> Result<String> {
     let helper = helper
         .to_str()
         .ok_or("the helper path is not valid UTF-8")?;
-    let path = manifest_path()?;
+    let path = manifest_path(HOST_NAME)?;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
@@ -83,17 +96,20 @@ fn install() -> Result<String> {
         "allowed_extensions": EXTENSION_IDS,
     });
     std::fs::write(&path, serde_json::to_string_pretty(&manifest)? + "\n")?;
-    Ok(format!("Registered {helper} in {}", path.display()))
+    let mut text = format!("Registered {helper} in {}", path.display());
+    let old = manifest_path(OLD_HOST_NAME)?;
+    if remove_manifest(&old)? {
+        text += &format!("\nRemoved {}", old.display());
+    }
+    Ok(text)
 }
 
 fn uninstall() -> Result<String> {
-    let path = manifest_path()?;
-    match std::fs::remove_file(&path) {
-        Ok(()) => Ok(format!("Removed {}", path.display())),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            Ok(format!("{} does not exist", path.display()))
-        }
-        Err(err) => Err(err.into()),
+    let path = manifest_path(HOST_NAME)?;
+    if remove_manifest(&path)? {
+        Ok(format!("Removed {}", path.display()))
+    } else {
+        Ok(format!("{} does not exist", path.display()))
     }
 }
 
@@ -104,7 +120,7 @@ fn report(result: Result<String>) -> ! {
             std::process::exit(0);
         }
         Err(err) => {
-            eprintln!("towa-passkey: {err}");
+            eprintln!("hybrid-passkey: {err}");
             std::process::exit(1);
         }
     }
@@ -226,7 +242,7 @@ async fn main() {
         Some("--install") => report(install()),
         Some("--uninstall") => report(uninstall()),
         Some(arg) if arg.starts_with("--") => {
-            report(Err("usage: towa-passkey [--install | --uninstall]".into()))
+            report(Err("usage: hybrid-passkey [--install | --uninstall]".into()))
         }
         _ => {}
     }

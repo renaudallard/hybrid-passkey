@@ -1,7 +1,7 @@
 [package]
-name = "towa-passkey"
+name = "hybrid-passkey"
 version = "0.1.0"
-description = "Native messaging helper that answers passkey requests with a passkey on a phone, for Towa and phonekey"
+description = "Native messaging helper that answers passkey requests of Thunderbird and Firefox add-ons with a passkey on a phone"
 edition = "2021"
 rust-version = "1.88"
 publish = false

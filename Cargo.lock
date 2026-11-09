@@ -2561,7 +2561,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "towa-passkey"
+name = "hybrid-passkey"
 version = "0.1.0"
 dependencies = [
  "libwebauthn",
